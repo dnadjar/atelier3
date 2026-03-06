@@ -1,0 +1,20 @@
+# --- SÉCURITÉ (Livrable 3.1) ---
+# Ne jamais versionner les secrets réels
+.env
+.env.test
+
+# --- PYTHON ---
+# Dossiers de l'environnement virtuel et cache
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# --- NODE.JS ---
+# Dépendances lourdes à ne pas uploader
+node_modules/
+npm-debug.log*
+
+# --- IDE ---
+# Fichiers de configuration propres à PyCharm
+.idea/

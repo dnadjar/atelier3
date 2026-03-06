@@ -1,0 +1,32 @@
+name: NeoBank Security CI
+
+on: [push, pull_request]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      # Scan SCA (Dépendances)
+      - name: Check Python Vulnerabilities
+        run: |
+          pip install safety
+          safety check -r requirements.txt
+
+      # Scan SAST (Code source)
+      - name: Bandit Security Scan
+        run: |
+          pip install bandit
+          bandit -r . -x ./.venv,./tests
+
+      # Exécution des tests de sécurité
+      - name: Run Security Tests
+        run: |
+          pip install -r requirements.txt
+          pytest tests/test_security.py
