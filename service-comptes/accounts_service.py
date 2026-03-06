@@ -5,17 +5,21 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from typing import Optional
 
-# Chargement sécurisé
+# Chargement des variables d'environnement (V4)
 load_dotenv()
 
 router = APIRouter()
-# CORRECTION V4 : On récupère depuis le .env
+
+# CORRECTION V4 : On récupère le secret depuis le fichier .env
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 
+
 class UserProfileUpdate(BaseModel):
+    """Whitelist pour contrer le Mass Assignment (V6)"""
     first_name: Optional[str] = Field(None, max_length=50)
     last_name: Optional[str] = Field(None, max_length=50)
     email: Optional[str] = Field(None, pattern=r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
+
 
 def get_db_connection():
     try:
@@ -26,7 +30,9 @@ def get_db_connection():
             password=DB_PASSWORD
         )
     except Exception:
+        # V10: Message générique pour éviter la fuite d'infos
         raise HTTPException(status_code=500, detail="Erreur de connexion sécurisée")
+
 
 @router.get("/transactions/search")
 def search_transactions(user_id: str, keyword: str = Query(..., min_length=1, max_length=50)):
@@ -34,9 +40,12 @@ def search_transactions(user_id: str, keyword: str = Query(..., min_length=1, ma
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+
+        # V1: Requête paramétrée contre l'injection SQL
         query = "SELECT * FROM transactions WHERE user_id = %s AND description LIKE %s"
         search_pattern = f"%{keyword}%"
         cursor.execute(query, (user_id, search_pattern))
+
         return {"transactions": cursor.fetchall()}
     except Exception:
         raise HTTPException(status_code=500, detail="Internal server error")
