@@ -1,54 +1,60 @@
-from fastapi import APIRouter, Query, HTTPException
-import psycopg2
+from fastapi import APIRouter, HTTPException
+from jose import jwt, JWTError
+from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
-from typing import Optional
 
 # Chargement des variables d'environnement (V4)
 load_dotenv()
 
 router = APIRouter()
 
-# CORRECTION V4 : On récupère le secret depuis le fichier .env
-DB_PASSWORD = os.getenv("DB_PASSWORD")
+# --- CONFIGURATION SÉCURISÉE ---
+SECRET_KEY = os.getenv("JWT_SECRET", "fallback_key_for_dev_only")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 20  # Correction V2 : Expiration courte
 
+# Récupération des identifiants depuis l'environnement (V4)
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 
-class UserProfileUpdate(BaseModel):
-    """Whitelist pour contrer le Mass Assignment (V6)"""
-    first_name: Optional[str] = Field(None, max_length=50)
-    last_name: Optional[str] = Field(None, max_length=50)
-    email: Optional[str] = Field(None, pattern=r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
+# --- FONCTIONS UTILITAIRES ---
 
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-def get_db_connection():
+def check_account_ownership(user_id: str, account_id: str):
+    # Simulation de vérification de propriété (V3)
+    db_mock = {"123": ["ACC-001", "ACC-002"], "456": ["ACC-999"]}
+    return account_id in db_mock.get(user_id, [])
+
+# --- ROUTES ---
+
+@router.post("/login")
+def login(username: str, password: str):
+    # CORRECTION V4 : Comparaison via variables d'env (plus de mot de passe en dur)
+    if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+        return {"access_token": create_access_token({"user_id": "123", "role": "admin"})}
+
+    # V10 : Message d'erreur générique
+    raise HTTPException(status_code=401, detail="Identifiants invalides")
+
+@router.get("/account/{account_id}")
+def get_account(account_id: str, token: str):
     try:
-        return psycopg2.connect(
-            host="db.neobank.internal",
-            database="accounts",
-            user="admin",
-            password=DB_PASSWORD
-        )
-    except Exception:
-        # V10: Message générique pour éviter la fuite d'infos
-        raise HTTPException(status_code=500, detail="Erreur de connexion sécurisée")
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id_from_token = payload.get("user_id")
 
+        # CORRECTION V3 (IDOR) : Vérification de propriété
+        if not check_account_ownership(user_id_from_token, account_id):
+            raise HTTPException(status_code=403, detail="Accès refusé")
 
-@router.get("/transactions/search")
-def search_transactions(user_id: str, keyword: str = Query(..., min_length=1, max_length=50)):
-    conn = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        return {"account_id": account_id, "balance": 1500.0, "currency": "EUR"}
 
-        # V1: Requête paramétrée contre l'injection SQL
-        query = "SELECT * FROM transactions WHERE user_id = %s AND description LIKE %s"
-        search_pattern = f"%{keyword}%"
-        cursor.execute(query, (user_id, search_pattern))
-
-        return {"transactions": cursor.fetchall()}
-    except Exception:
-        raise HTTPException(status_code=500, detail="Internal server error")
-    finally:
-        if conn:
-            conn.close()
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Session expirée")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Token invalide")
